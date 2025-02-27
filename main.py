@@ -2,30 +2,33 @@
 from random import randint
 
 points = []
-for _ in range(20):
+for _ in range(14):
     points.append([randint(-10, 10) for i in range(3)])
 # Или ввести координаты в ручном режиме
-# points = [
-#     [5, 5, 5],
-#     [5, 5, -5],
-#     [5, -5, 5],
-#     [5, -5, -5],
-#     [-5, 5, 5],
-#     [-5, 5, -5],
-#     [-5, -5, 5],
-#     [-5, -5, -5],
+points = [
+    [5, 5, 5],
+    [5, 5, -5],
+    [5, -5, 5],
+    [5, -5, -5],
+    [-5, 5, 5],
+    [-5, 5, -5],
+    [-5, -5, 5],
+    [-5, -5, -5],
 #     [7, 0, 0],
 #     [-2, 8, 9],
-# ]
+]
 
 # настройки ширины и высоты окна
-width, height = 1090, 700
+width, height = 1280 * 3//4, 800 * 3//4
 
-# Для управления использовать клавиши:    if key[pygame.K_r]:
+# Для управления использовать клавиши:   
 # x, y, z - вращение точек в плоскости паралельной выбранной.
 # стрелка вверх / вниз - приближение или отдаление объекта
 # w, a, s, d - вверх, вниз, влево, вправо (переместить)
 # r - инвертированный режим для вращения (x, y, z)
+# e - отображение/отключение рёбер
+# f - отображение/отключение граней
+# v - отображение/отключение вершин
 
 # SZ - начальное приближение объекта (чем больше тем он крупнее)
 SZ = 20
@@ -35,9 +38,7 @@ sd = 5 / sz
 
 import pygame
 from math import *
-from functools import cmp_to_key
-from numpy import unique
-from copy import deepcopy
+import time
 
 INF = 10000000
 
@@ -232,17 +233,25 @@ def rotate(fix, da):
         e.recalc()
 
 
-# rotate(0, pi / 2)
-rotate(1, pi / 30)
+# rotate(0, -pi / 4)
+# rotate(1, pi / 4)
 
 CR = pi / 100
 running = True
 center = [width // 2, height // 2]
+vis_edge = 1
+time_edge = -INF
+vis_side = 1
+time_side = -INF
+vis_point = 0
+time_point = -INF
+latency_press = 0.3
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
 
+    cur_time = time.time()
     key = pygame.key.get_pressed()
     rev_mn = 1
     if key[pygame.K_r]:
@@ -265,97 +274,115 @@ while running:
         center[0] -= sd * sz
     if key[pygame.K_d]:
         center[0] += sd * sz
+    if key[pygame.K_e]:
+        if cur_time - time_edge < latency_press:
+            continue
+        vis_edge ^= 1
+        time_edge = cur_time
+    if key[pygame.K_f]:
+        if cur_time - time_side < latency_press:
+            continue
+        vis_side ^= 1
+        time_side = cur_time
+    if key[pygame.K_v]:
+        if cur_time - time_point < latency_press:
+            continue
+        vis_point ^= 1
+        time_point = cur_time
 
     screen.fill(black)
 
-    buf = []
-    bbuf = []
-    for ii in range(len(sides)):
-        if abs(sides[ii].c) >= 1e-6:
-            buf.append(sides[ii])
-        else:
-            bbuf.append(sides[ii])
-    sides = bbuf + buf
+    if vis_side:
+        buf = []
+        bbuf = []
+        for ii in range(len(sides)):
+            if abs(sides[ii].c) >= 1e-6:
+                buf.append(sides[ii])
+            else:
+                bbuf.append(sides[ii])
+        sides = bbuf + buf
 
-    for i, side in enumerate(sides):
-        if abs(side.c) < 1e-6:
-            continue
-
-        prt = True
-        for j, oth in enumerate(sides):
-            if abs(oth.c) < 1e-6:
+        for i, side in enumerate(sides):
+            if abs(side.c) < 1e-6:
                 continue
-            s = side.side
-            o = oth.side
 
-            for p in s:
-                if oth.is_in(p[0], p[1]) and oth.get_z(p[0], p[1]) > p[2] + 1e-6:
-                    prt = False
-                    break
-            if not prt:
-                break
-            for p in o:
-                if side.is_in(p[0], p[1]) and side.get_z(p[0], p[1]) < p[2] - 1e-6:
-                    prt = False
-                    break
+            prt = True
+            for j, oth in enumerate(sides):
+                if abs(oth.c) < 1e-6:
+                    continue
+                s = side.side
+                o = oth.side
 
-            ls = s[-1]
-            for cs in s:
-                if not prt:
-                    break
-                lo = o[-1]
-                for co in o:
-                    p = intersect(ls[:2], cs[:2], lo[:2], co[:2])
-                    if type(p) != list:
-                        lo = co
-                        continue
-                    if oth.get_z(p[0], p[1]) > side.get_z(p[0], p[1]) + 1e-6:
-                        if len(s) == 4 and cs[2] > 0:
-                            print(ls)
-                            print(cs)
-                            print(lo)
-                            print(co)
+                for p in s:
+                    if oth.is_in(p[0], p[1]) and oth.get_z(p[0], p[1]) > p[2] + 1e-6:
                         prt = False
                         break
-                    lo = co
-                ls = cs
+                if not prt:
+                    break
+                for p in o:
+                    if side.is_in(p[0], p[1]) and side.get_z(p[0], p[1]) < p[2] - 1e-6:
+                        prt = False
+                        break
 
-            if not prt:
-                break
+                ls = s[-1]
+                for cs in s:
+                    if not prt:
+                        break
+                    lo = o[-1]
+                    for co in o:
+                        p = intersect(ls[:2], cs[:2], lo[:2], co[:2])
+                        if type(p) != list:
+                            lo = co
+                            continue
+                        if oth.get_z(p[0], p[1]) > side.get_z(p[0], p[1]) + 1e-6:
+                            if len(s) == 4 and cs[2] > 0:
+                                print(ls)
+                                print(cs)
+                                print(lo)
+                                print(co)
+                            prt = False
+                            break
+                        lo = co
+                    ls = cs
 
-        if prt:
-            # print([[int(e) * 10 for e in p] for p in side.side])
-            p = [(g[0] * sz + center[0], g[1] * sz + center[1]) for g in side.side]
-            if len(p) > 2:
-                pygame.draw.polygon(screen, side.color, p)
+                if not prt:
+                    break
+
+            if prt:
+                # print([[int(e) * 10 for e in p] for p in side.side])
+                p = [(g[0] * sz + center[0], g[1] * sz + center[1]) for g in side.side]
+                if len(p) > 2:
+                    pygame.draw.polygon(screen, side.color, p)
 
     # exit()
 
-    for edge in edges:
-        fl = -1
-        d = neg(edge[0], edge[1])
-        for e in edge:
-            x, y, z = neg(e, mulsc(0.0001, d))
-            for i, side in enumerate(sides):
-                if side.c and side.is_in(x, y) and side.get_z(x, y) > z + 1e-6:
-                    fl = i
-            d = neg(edge[1], edge[0])
-        if fl != -1:
-            continue
-        p = [(g[0] * sz + center[0], g[1] * sz + center[1]) for g in edge]
-        pygame.draw.line(screen, white, p[0], p[1])
+    if vis_edge:
+        for edge in edges:
+            fl = -1
+            d = neg(edge[0], edge[1])
+            for e in edge:
+                x, y, z = neg(e, mulsc(0.0001, d))
+                for i, side in enumerate(sides):
+                    if side.c and side.is_in(x, y) and side.get_z(x, y) > z + 1e-6:
+                        fl = i
+                d = neg(edge[1], edge[0])
+            if fl != -1:
+                continue
+            p = [(g[0] * sz + center[0], g[1] * sz + center[1]) for g in edge]
+            pygame.draw.line(screen, white, p[0], p[1])
 
-    # zs = [e[2] for e in points]
-    # mx = max(zs)
-    # mn = min(zs)
-    # for p in points:
-    #     d = (p[2] - mn) / (mx - mn)
-    #     pygame.draw.circle(
-    #         screen,
-    #         (255 * d, 0, 255 - 255 * d),
-    #         (int(p[0] * sz + center[0]), int(p[1] * sz + center[1])),
-    #         5,
-    #     )
+    if vis_point:
+        zs = [e[2] for e in points]
+        mx = max(zs)
+        mn = min(zs)
+        for p in points:
+            d = (p[2] - mn) / (mx - mn)
+            pygame.draw.circle(
+                screen,
+                (255 * d, 0, 255 - 255 * d),
+                (int(p[0] * sz + center[0]), int(p[1] * sz + center[1])),
+                5,
+            )
 
     pygame.display.flip()
     pygame.time.delay(30)
