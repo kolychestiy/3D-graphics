@@ -1,21 +1,25 @@
 # Генерация точек случайно
 from random import randint
+
 points = []
-for _ in range(30):
+for _ in range(20):
     points.append([randint(-10, 10) for i in range(3)])
 # Или ввести координаты в ручном режиме
 # points = [
-    # [5, 5, 5],
-    # [5, 5, -5],
-    # [5, -5, 5],
-    # [5, -5, -5],
-    # [-5, 5, 5],
-    # [-5, 5, -5],
-    # [-5, -5, 5],
-    # [-5, -5, -5],
-    # [7, 0, 0],
-    # [-2, 8, 9],
+#     [5, 5, 5],
+#     [5, 5, -5],
+#     [5, -5, 5],
+#     [5, -5, -5],
+#     [-5, 5, 5],
+#     [-5, 5, -5],
+#     [-5, -5, 5],
+#     [-5, -5, -5],
+#     [7, 0, 0],
+#     [-2, 8, 9],
 # ]
+
+# настройки ширины и высоты окна
+width, height = 1090, 700
 
 # Для управления использовать клавиши:    if key[pygame.K_r]:
 # x, y, z - вращение точек в плоскости паралельной выбранной.
@@ -23,21 +27,23 @@ for _ in range(30):
 # w, a, s, d - вверх, вниз, влево, вправо (переместить)
 # r - инвертированный режим для вращения (x, y, z)
 
+# SZ - начальное приближение объекта (чем больше тем он крупнее)
+SZ = 20
+sz = SZ
+# sd - отвечает за скорость перемещения по wasd
+sd = 5 / sz
+
 import pygame
 from math import *
 from functools import cmp_to_key
 from numpy import unique
 from copy import deepcopy
 
-SZ = 20
-sz = SZ
-sd = 5 / sz
-INF = 100
+INF = 10000000
 
 
 pygame.init()
 
-width, height = 1090, 700
 screen = pygame.display.set_mode((width, height))
 pygame.display.set_caption("Выпуклые многогранники")
 
@@ -55,11 +61,11 @@ def vect(p, q):
 
 
 def scal(p, q):
-    return sum([p[i] * q[i] for i in range(3)])
+    return sum([p[i] * q[i] for i in range(len(p))])
 
 
 def neg(p, q):
-    return [p[i] - q[i] for i in range(3)]
+    return [p[i] - q[i] for i in range(len(p))]
 
 
 def mulsc(sc, p):
@@ -89,6 +95,7 @@ class Side:
         side = [points[i] for i in side]
         self.side = side
         self.recalc()
+        self.color = [randint(0, 255) for i in range(3)]
         last = self.side[-1]
         for cur in self.side:
             edges.append(sorted([cur, last]))
@@ -117,6 +124,7 @@ class Side:
                 return False
             last = cur
         return True
+
 
 edges = []
 sides = []
@@ -172,6 +180,39 @@ while i < len(points):
 points = points[: j + 1]
 
 
+class Line:
+    def __init__(self, p, q):
+        self.a = q[1] - p[1]
+        self.b = p[0] - q[0]
+        self.c = -(self.a * p[0] + self.b * p[1])
+
+
+def intersect(p, q, P, Q):
+    l = Line(p, q)
+    m = Line(P, Q)
+    zn = l.b * m.a - l.a * m.b
+    if abs(zn) < 1e-6:
+        if (
+            abs(l.a * m.b - l.b * m.a) > 1e-6
+            or abs(l.a * m.c - l.c * m.a) > 1e-6
+            or abs(l.b * m.c - l.c * m.b) > 1e-6
+        ):
+            return -1
+        if max(p, q) < min(P, Q) or max(P, Q) < min(p, q):
+            return -1
+        fi = max(min(p, q), min(P, Q))
+        se = min(max(p, q), max(P, Q))
+        return mulsc(0.5, neg(fi, mulsc(-1, se)))
+    x = (m.c * l.b - m.b * l.c) / -zn
+    y = (m.c * l.a - m.a * l.c) / zn
+    z = [x, y]
+    if scal(neg(p, q), neg(z, q)) < 0 or scal(neg(q, p), neg(z, p)) < 0:
+        return -1
+    if scal(neg(P, Q), neg(z, Q)) < 0 or scal(neg(Q, P), neg(z, P)) < 0:
+        return -1
+    return z
+
+
 def rotate(fix, da):
     for e in points:
         p = []
@@ -190,6 +231,9 @@ def rotate(fix, da):
     for e in sides:
         e.recalc()
 
+
+# rotate(0, pi / 2)
+rotate(1, pi / 30)
 
 CR = pi / 100
 running = True
@@ -224,10 +268,68 @@ while running:
 
     screen.fill(black)
 
-    for side in sides:
-        p = [(g[0] * sz + center[0], g[1] * sz + center[1]) for g in side.side]
-        if len(p) > 2:
-            pygame.draw.polygon(screen, green, p)
+    buf = []
+    bbuf = []
+    for ii in range(len(sides)):
+        if abs(sides[ii].c) >= 1e-6:
+            buf.append(sides[ii])
+        else:
+            bbuf.append(sides[ii])
+    sides = bbuf + buf
+
+    for i, side in enumerate(sides):
+        if abs(side.c) < 1e-6:
+            continue
+
+        prt = True
+        for j, oth in enumerate(sides):
+            if abs(oth.c) < 1e-6:
+                continue
+            s = side.side
+            o = oth.side
+
+            for p in s:
+                if oth.is_in(p[0], p[1]) and oth.get_z(p[0], p[1]) > p[2] + 1e-6:
+                    prt = False
+                    break
+            if not prt:
+                break
+            for p in o:
+                if side.is_in(p[0], p[1]) and side.get_z(p[0], p[1]) < p[2] - 1e-6:
+                    prt = False
+                    break
+
+            ls = s[-1]
+            for cs in s:
+                if not prt:
+                    break
+                lo = o[-1]
+                for co in o:
+                    p = intersect(ls[:2], cs[:2], lo[:2], co[:2])
+                    if type(p) != list:
+                        lo = co
+                        continue
+                    if oth.get_z(p[0], p[1]) > side.get_z(p[0], p[1]) + 1e-6:
+                        if len(s) == 4 and cs[2] > 0:
+                            print(ls)
+                            print(cs)
+                            print(lo)
+                            print(co)
+                        prt = False
+                        break
+                    lo = co
+                ls = cs
+
+            if not prt:
+                break
+
+        if prt:
+            # print([[int(e) * 10 for e in p] for p in side.side])
+            p = [(g[0] * sz + center[0], g[1] * sz + center[1]) for g in side.side]
+            if len(p) > 2:
+                pygame.draw.polygon(screen, side.color, p)
+
+    # exit()
 
     for edge in edges:
         fl = -1
@@ -243,17 +345,17 @@ while running:
         p = [(g[0] * sz + center[0], g[1] * sz + center[1]) for g in edge]
         pygame.draw.line(screen, white, p[0], p[1])
 
-    zs = [e[2] for e in points]
-    mx = max(zs)
-    mn = min(zs)
-    for p in points:
-        d = (p[2] - mn) / (mx - mn)
-        pygame.draw.circle(
-            screen,
-            (255 * d, 0, 255 - 255*d),
-            (int(p[0] * sz + center[0]), int(p[1] * sz + center[1])),
-            5,
-        )
+    # zs = [e[2] for e in points]
+    # mx = max(zs)
+    # mn = min(zs)
+    # for p in points:
+    #     d = (p[2] - mn) / (mx - mn)
+    #     pygame.draw.circle(
+    #         screen,
+    #         (255 * d, 0, 255 - 255 * d),
+    #         (int(p[0] * sz + center[0]), int(p[1] * sz + center[1])),
+    #         5,
+    #     )
 
     pygame.display.flip()
     pygame.time.delay(30)
